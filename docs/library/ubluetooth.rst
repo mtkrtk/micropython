@@ -45,11 +45,22 @@ Configuration
 
     Currently supported values are:
 
-    - ``'mac'``: Returns the device MAC address. If a device has a fixed address
-      (e.g. PYBD) then it will be returned. Otherwise (e.g. ESP32) a random
-      address will be generated when the BLE interface is made active.
-      Note: on some ports, accessing this value requires that the interface is
-      active (so that the MAC address can be queried from the controller).
+    - ``'mac'``: The current address in use, depending on the current address mode.
+      This returns a tuple of ``(addr_type, addr)``.
+
+      See :meth:`gatts_write <BLE.gap_scan>` for details about address type.
+
+      This may only be queried while the interface is currently active.
+
+    - ``'addr_mode'``: Sets the address mode. Values can be:
+
+        * 0x00 - PUBLIC - Use the controller's public address.
+        * 0x01 - RANDOM - Use a generated static address.
+        * 0x02 - RPA - Use resolvable private addresses.
+        * 0x03 - NRPA - Use non-resolvable private addresses.
+
+      By default the interface mode will use a PUBLIC address if available, otherwise
+      it will use a RANDOM address.
 
     - ``'gap_name'``: Get/set the GAP device name used by service 0x1800,
       characteristic 0x2a00.  This can be set at any time and changed multiple
@@ -71,12 +82,12 @@ Event Handling
     arguments, ``event`` (which will be one of the codes below) and ``data``
     (which is an event-specific tuple of values).
 
-    Note: the ``addr``, ``adv_data``, ``char_data``, ``notify_data``, and
-    ``uuid`` entries in the tuples are
-    references to data managed by the :mod:`ubluetooth` module (i.e. the same
-    instance will be re-used across multiple calls to the event handler). If
-    your program wants to use this data outside of the handler, then it must
-    copy them first, e.g. by using ``bytes(addr)`` or ``bluetooth.UUID(uuid)``.
+    **Note:** the ``addr``, ``adv_data``, ``char_data``, ``notify_data``, and
+    ``uuid`` entries in the tuples are references to data managed by the
+    :mod:`ubluetooth` module (i.e. the same instance will be re-used across
+    multiple calls to the event handler). If your program wants to use this
+    data outside of the handler, then it must copy them first, e.g. by using
+    ``bytes(addr)`` or ``bluetooth.UUID(uuid)``.
 
     An event handler showing all possible events::
 
@@ -147,6 +158,10 @@ Event Handling
             elif event == _IRQ_GATTC_INDICATE:
                 # A peripheral has sent an indicate request.
                 conn_handle, value_handle, notify_data = data
+            elif event == _IRQ_GATTS_INDICATE_DONE:
+                # A central has acknowledged the indication.
+                # Note: Status will be zero on successful acknowledgment, implementation-specific value otherwise.
+                conn_handle, value_handle, status = data
 
 The event codes are::
 
@@ -170,6 +185,7 @@ The event codes are::
     _IRQ_GATTC_WRITE_DONE = const(17)
     _IRQ_GATTC_NOTIFY = const(18)
     _IRQ_GATTC_INDICATE = const(19)
+    _IRQ_GATTS_INDICATE_DONE = const(20)
 
 In order to save space in the firmware, these constants are not included on the
 :mod:`ubluetooth` module. Add the ones that you need from the list above to your
@@ -189,7 +205,7 @@ Broadcaster Role (Advertiser)
     protocol (e.g. ``bytes``, ``bytearray``, ``str``). *adv_data* is included
     in all broadcasts, and *resp_data* is send in reply to an active scan.
 
-    Note: if *adv_data* (or *resp_data*) is ``None``, then the data passed
+    **Note:** if *adv_data* (or *resp_data*) is ``None``, then the data passed
     to the previous call to ``gap_advertise`` will be re-used. This allows a
     broadcaster to resume advertising with just ``gap_advertise(interval_us)``.
     To clear the advertising payload pass an empty ``bytes``, i.e. ``b''``.
@@ -198,7 +214,7 @@ Broadcaster Role (Advertiser)
 Observer Role (Scanner)
 -----------------------
 
-.. method:: BLE.gap_scan(duration_ms, [interval_us], [window_us])
+.. method:: BLE.gap_scan(duration_ms, [interval_us], [window_us], [active])
 
     Run a scan operation lasting for the specified duration (in **milli**\ seconds).
 
@@ -213,8 +229,13 @@ Observer Role (Scanner)
     (background scanning).
 
     For each scan result the ``_IRQ_SCAN_RESULT`` event will be raised, with event
-    data ``(addr_type, addr, adv_type, rssi, adv_data)``.  ``adv_type`` values correspond
-    to the Bluetooth Specification:
+    data ``(addr_type, addr, adv_type, rssi, adv_data)``.
+
+    ``addr_type`` values indicate public or random addresses:
+        * 0x00 - PUBLIC
+        * 0x01 - RANDOM (either static, RPA, or NRPA, the type is encoded in the address itself)
+
+    ``adv_type`` values correspond to the Bluetooth Specification:
 
         * 0x00 - ADV_IND - connectable and scannable undirected advertising
         * 0x01 - ADV_DIRECT_IND - connectable directed advertising
@@ -222,6 +243,8 @@ Observer Role (Scanner)
         * 0x03 - ADV_NONCONN_IND - non-connectable undirected advertising
         * 0x04 - SCAN_RSP - scan response
 
+    ``active`` can be set ``True`` if you want to receive scan responses in the results.
+    
     When scanning is stopped (either due to the duration finishing or when
     explicitly stopped), the ``_IRQ_SCAN_DONE`` event will be raised.
 
@@ -280,8 +303,8 @@ writes from a central to a given characteristic, use
         ( (hr,), (tx, rx,), ) = bt.gatts_register_services(SERVICES)
 
     The three value handles (``hr``, ``tx``, ``rx``) can be used with
-    :meth:`gatts_read <BLE.gatts_read>`, :meth:`gatts_write <BLE.gatts_write>`,
-    and :meth:`gatts_notify <BLE.gatts_notify>`.
+    :meth:`gatts_read <BLE.gatts_read>`, :meth:`gatts_write <BLE.gatts_write>`, :meth:`gatts_notify <BLE.gatts_notify>`, and
+    :meth:`gatts_indicate <BLE.gatts_indicate>`.
 
     **Note:** Advertising must be stopped before registering services.
 
@@ -296,12 +319,24 @@ writes from a central to a given characteristic, use
 
 .. method:: BLE.gatts_notify(conn_handle, value_handle, [data])
 
-    Notifies a connected central that this value has changed and that it should
-    issue a read of the current value from this peripheral.
+    Sends a notification request to a connected central.
 
-    If *data* is specified, then the that value is sent to the central as part
-    of the notification, avoiding the need for a separate read request. Note
-    that this will not update the local value stored.
+    If *data* is specified, then that value is sent to the central as part of
+    the notification. The local value will not be modified.
+
+    Otherwise, if *data* is not specified, then the current local value (as
+    set with :meth:`gatts_write <BLE.gatts_write>`) will be sent.
+
+.. method:: BLE.gatts_indicate(conn_handle, value_handle)
+
+    Sends an indication request to a connected central.
+
+    **Note:** This does not currently support sending a custom value, it will
+    always send the current local value (as set with :meth:`gatts_write
+    <BLE.gatts_write>`).
+
+    On acknowledgment (or failure, e.g. timeout), the
+    ``_IRQ_GATTS_INDICATE_DONE`` event will be raised.
 
 .. method:: BLE.gatts_set_buffer(value_handle, len, append=False, /)
 
@@ -321,6 +356,8 @@ Central Role (GATT Client)
 .. method:: BLE.gap_connect(addr_type, addr, scan_duration_ms=2000, /)
 
     Connect to a peripheral.
+
+    See :meth:`gatts_write <BLE.gap_scan>` for details about address types.
 
     On success, the ``_IRQ_PERIPHERAL_CONNECT`` event will be raised.
 
