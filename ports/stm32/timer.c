@@ -803,7 +803,7 @@ STATIC const uint32_t tim_instance_table[MICROPY_HW_MAX_TIMER] = {
     TIM_ENTRY(1, TIM1_BRK_UP_TRG_COM_IRQn),
     #elif defined(STM32F4) || defined(STM32F7)
     TIM_ENTRY(1, TIM1_UP_TIM10_IRQn),
-    #elif defined(STM32H7)
+    #elif defined(STM32H7) || defined(STM32L5)
     TIM_ENTRY(1, TIM1_UP_IRQn),
     #elif defined(STM32L4) || defined(STM32WB)
     TIM_ENTRY(1, TIM1_UP_TIM16_IRQn),
@@ -820,7 +820,7 @@ STATIC const uint32_t tim_instance_table[MICROPY_HW_MAX_TIMER] = {
     TIM_ENTRY(5, TIM5_IRQn),
     #endif
     #if defined(TIM6)
-    #if defined(STM32F412Zx)
+    #if defined(STM32F412Zx) || defined(STM32L5)
     TIM_ENTRY(6, TIM6_IRQn),
     #else
     TIM_ENTRY(6, TIM6_DAC_IRQn),
@@ -832,7 +832,7 @@ STATIC const uint32_t tim_instance_table[MICROPY_HW_MAX_TIMER] = {
     #if defined(TIM8)
     #if defined(STM32F4) || defined(STM32F7) || defined(STM32H7)
     TIM_ENTRY(8, TIM8_UP_TIM13_IRQn),
-    #elif defined(STM32L4)
+    #elif defined(STM32L4) || defined(STM32L5)
     TIM_ENTRY(8, TIM8_UP_IRQn),
     #endif
     #endif
@@ -857,21 +857,21 @@ STATIC const uint32_t tim_instance_table[MICROPY_HW_MAX_TIMER] = {
     TIM_ENTRY(14, TIM8_TRG_COM_TIM14_IRQn),
     #endif
     #if defined(TIM15)
-    #if defined(STM32F0) || defined(STM32H7)
+    #if defined(STM32F0) || defined(STM32H7) || defined(STM32L5)
     TIM_ENTRY(15, TIM15_IRQn),
     #else
     TIM_ENTRY(15, TIM1_BRK_TIM15_IRQn),
     #endif
     #endif
     #if defined(TIM16)
-    #if defined(STM32F0) || defined(STM32H7)
+    #if defined(STM32F0) || defined(STM32H7) || defined(STM32L5)
     TIM_ENTRY(16, TIM16_IRQn),
     #else
     TIM_ENTRY(16, TIM1_UP_TIM16_IRQn),
     #endif
     #endif
     #if defined(TIM17)
-    #if defined(STM32F0) || defined(STM32H7)
+    #if defined(STM32F0) || defined(STM32H7) || defined(STM32L5)
     TIM_ENTRY(17, TIM17_IRQn),
     #else
     TIM_ENTRY(17, TIM1_TRG_COM_TIM17_IRQn),

@@ -207,6 +207,15 @@
 #define MICROPY_HW_MAX_TIMER (17)
 #define MICROPY_HW_MAX_UART (6)
 
+// Configuration for STM32L5 series
+#elif defined(STM32L5)
+
+#define MP_HAL_UNIQUE_ID_ADDRESS (0x0BFA0590)
+#define PYB_EXTI_NUM_VECTORS (43)
+#define MICROPY_HW_MAX_I2C (4)
+#define MICROPY_HW_MAX_TIMER (17)
+#define MICROPY_HW_MAX_UART (5)
+
 // Configuration for STM32WB series
 #elif defined(STM32WB)
 

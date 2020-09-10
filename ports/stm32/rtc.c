@@ -185,7 +185,7 @@ void rtc_init_finalise() {
 
     // fresh reset; configure RTC Calendar
     RTC_CalendarConfig();
-    #if defined(STM32L4) || defined(STM32WB)
+    #if defined(STM32L4) || defined(STM32L5) || defined(STM32WB)
     if (__HAL_RCC_GET_FLAG(RCC_FLAG_BORRST) != RESET) {
     #else
     if (__HAL_RCC_GET_FLAG(RCC_FLAG_PORRST) != RESET) {
@@ -226,7 +226,7 @@ STATIC HAL_StatusTypeDef PYB_RCC_OscConfig(RCC_OscInitTypeDef *RCC_OscInitStruct
         HAL_PWR_EnableBkUpAccess();
         uint32_t tickstart = HAL_GetTick();
 
-        #if defined(STM32F7) || defined(STM32L4) || defined(STM32H7) || defined(STM32WB)
+        #if defined(STM32F7) || defined(STM32L4) || defined(STM32L5) || defined(STM32H7) || defined(STM32WB)
         // __HAL_RCC_PWR_CLK_ENABLE();
         // Enable write access to Backup domain
         // PWR->CR1 |= PWR_CR1_DBP;
@@ -304,7 +304,11 @@ STATIC HAL_StatusTypeDef PYB_RTC_Init(RTC_HandleTypeDef *hrtc) {
         hrtc->Instance->PRER |= (uint32_t)(hrtc->Init.AsynchPrediv << 16);
 
         // Exit Initialization mode
+        #if defined(STM32L5)
+        hrtc->Instance->ICSR &= (uint32_t) ~RTC_ICSR_INIT;
+        #else
         hrtc->Instance->ISR &= (uint32_t) ~RTC_ISR_INIT;
+        #endif
 
         #if defined(STM32L0) || defined(STM32L4) || defined(STM32H7) || defined(STM32WB)
         hrtc->Instance->OR &= (uint32_t) ~RTC_OR_ALARMOUTTYPE;
@@ -312,6 +316,7 @@ STATIC HAL_StatusTypeDef PYB_RTC_Init(RTC_HandleTypeDef *hrtc) {
         #elif defined(STM32F7)
         hrtc->Instance->OR &= (uint32_t) ~RTC_OR_ALARMTYPE;
         hrtc->Instance->OR |= (uint32_t)(hrtc->Init.OutPutType);
+        #elif defined(STM32L5)
         #else
         hrtc->Instance->TAFCR &= (uint32_t) ~RTC_TAFCR_ALARMOUTTYPE;
         hrtc->Instance->TAFCR |= (uint32_t)(hrtc->Init.OutPutType);
@@ -579,7 +584,11 @@ mp_obj_t pyb_rtc_wakeup(size_t n_args, const mp_obj_t *args) {
     rtc_init_finalise();
 
     // disable wakeup IRQ while we configure it
+    #if defined(STM32L5)
+    HAL_NVIC_DisableIRQ(RTC_IRQn);
+    #else
     HAL_NVIC_DisableIRQ(RTC_WKUP_IRQn);
+    #endif
 
     bool enable = false;
     mp_int_t wucksel;
@@ -641,8 +650,13 @@ mp_obj_t pyb_rtc_wakeup(size_t n_args, const mp_obj_t *args) {
     RTC->CR &= ~RTC_CR_WUTE;
 
     // wait until WUTWF is set
+    #if defined(STM32L5)
+    while (!(RTC->MISR & RTC_MISR_WUTMF)) {
+    }
+    #else
     while (!(RTC->ISR & RTC_ISR_WUTWF)) {
     }
+    #endif
 
     if (enable) {
         // program WUT
@@ -657,7 +671,7 @@ mp_obj_t pyb_rtc_wakeup(size_t n_args, const mp_obj_t *args) {
         RTC->WPR = 0xff;
 
         // enable external interrupts on line EXTI_RTC_WAKEUP
-        #if defined(STM32L4) || defined(STM32WB)
+        #if defined(STM32L4) || defined(STM32L5) || defined(STM32WB)
         EXTI->IMR1 |= 1 << EXTI_RTC_WAKEUP;
         EXTI->RTSR1 |= 1 << EXTI_RTC_WAKEUP;
         #elif defined(STM32H7)
@@ -669,17 +683,28 @@ mp_obj_t pyb_rtc_wakeup(size_t n_args, const mp_obj_t *args) {
         #endif
 
         // clear interrupt flags
+        #if defined(STM32L5)
+        RTC->MISR &= ~RTC_MISR_WUTMF;
+        #else
         RTC->ISR &= ~RTC_ISR_WUTF;
+        #endif
         #if defined(STM32L4) || defined(STM32WB)
         EXTI->PR1 = 1 << EXTI_RTC_WAKEUP;
+        #elif defined(STM32L5)
+        EXTI->RPR1 = 1 << EXTI_RTC_WAKEUP;
         #elif defined(STM32H7)
         EXTI_D1->PR1 = 1 << EXTI_RTC_WAKEUP;
         #else
         EXTI->PR = 1 << EXTI_RTC_WAKEUP;
         #endif
 
+        #if defined(STM32L5)
+        NVIC_SetPriority(RTC_IRQn, IRQ_PRI_RTC_WKUP);
+        HAL_NVIC_EnableIRQ(RTC_IRQn);
+        #else
         NVIC_SetPriority(RTC_WKUP_IRQn, IRQ_PRI_RTC_WKUP);
         HAL_NVIC_EnableIRQ(RTC_WKUP_IRQn);
+        #endif
 
         // printf("wut=%d wucksel=%d\n", wut, wucksel);
     } else {
@@ -690,7 +715,7 @@ mp_obj_t pyb_rtc_wakeup(size_t n_args, const mp_obj_t *args) {
         RTC->WPR = 0xff;
 
         // disable external interrupts on line EXTI_RTC_WAKEUP
-        #if defined(STM32L4) || defined(STM32WB)
+        #if defined(STM32L4) || defined(STM32L5) || defined(STM32WB)
         EXTI->IMR1 &= ~(1 << EXTI_RTC_WAKEUP);
         #elif defined(STM32H7)
         EXTI_D1->IMR1 |= 1 << EXTI_RTC_WAKEUP;

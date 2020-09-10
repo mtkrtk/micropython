@@ -201,7 +201,7 @@ int powerctrl_rcc_clock_config_pll(RCC_ClkInitTypeDef *rcc_init, uint32_t sysclk
 
 #endif
 
-#if !defined(STM32F0) && !defined(STM32L0) && !defined(STM32L4)
+#if !defined(STM32F0) && !defined(STM32L0) && !defined(STM32L4) && !defined(STM32L5)
 
 STATIC uint32_t calc_ahb_div(uint32_t wanted_div) {
     #if defined(STM32H7)
@@ -485,6 +485,12 @@ int powerctrl_set_sysclk(uint32_t sysclk, uint32_t ahb, uint32_t apb1, uint32_t 
 
 #endif
 
+#elif defined(STM32L5)
+
+int powerctrl_set_sysclk(uint32_t sysclk, uint32_t ahb, uint32_t apb1, uint32_t apb2) {
+    return 0;
+}
+
 #endif // !defined(STM32F0) && !defined(STM32L0) && !defined(STM32L4)
 
 void powerctrl_enter_stop_mode(void) {
@@ -501,7 +507,7 @@ void powerctrl_enter_stop_mode(void) {
     __HAL_RCC_WAKEUPSTOP_CLK_CONFIG(RCC_STOP_WAKEUPCLOCK_MSI);
     #endif
 
-    #if !defined(STM32F0) && !defined(STM32L0) && !defined(STM32L4) && !defined(STM32WB)
+    #if !defined(STM32F0) && !defined(STM32L0) && !defined(STM32L4) && !defined(STM32L5) && !defined(STM32WB)
     // takes longer to wake but reduces stop current
     HAL_PWREx_EnableFlashPowerDown();
     #endif
@@ -614,6 +620,9 @@ void powerctrl_enter_standby_mode(void) {
     #if defined(STM32F0) || defined(STM32L0)
     #define CR_BITS (RTC_CR_ALRAIE | RTC_CR_WUTIE | RTC_CR_TSIE)
     #define ISR_BITS (RTC_ISR_ALRAF | RTC_ISR_WUTF | RTC_ISR_TSF)
+    #elif defined(STM32L5)
+    #define CR_BITS (RTC_CR_ALRAIE | RTC_CR_ALRBIE | RTC_CR_WUTIE | RTC_CR_TSIE)
+    #define ISR_BITS (RTC_MISR_ALRAMF | RTC_MISR_ALRBMF | RTC_MISR_WUTMF | RTC_MISR_TSMF)
     #else
     #define CR_BITS (RTC_CR_ALRAIE | RTC_CR_ALRBIE | RTC_CR_WUTIE | RTC_CR_TSIE)
     #define ISR_BITS (RTC_ISR_ALRAF | RTC_ISR_ALRBF | RTC_ISR_WUTF | RTC_ISR_TSF)
@@ -626,7 +635,11 @@ void powerctrl_enter_standby_mode(void) {
     RTC->CR &= ~CR_BITS;
 
     // clear RTC wake-up flags
+    #if defined(STM32L5)
+    RTC->MISR &= ~ISR_BITS;
+    #else
     RTC->ISR &= ~ISR_BITS;
+    #endif
 
     #if defined(STM32F7)
     // disable wake-up flags
@@ -635,7 +648,7 @@ void powerctrl_enter_standby_mode(void) {
     PWR->CR2 |= PWR_CR2_CWUPF6 | PWR_CR2_CWUPF5 | PWR_CR2_CWUPF4 | PWR_CR2_CWUPF3 | PWR_CR2_CWUPF2 | PWR_CR2_CWUPF1;
     #elif defined(STM32H7)
     // TODO
-    #elif defined(STM32L4) || defined(STM32WB)
+    #elif defined(STM32L4) || defined(STM32L5) || defined(STM32WB)
     // clear all wake-up flags
     PWR->SCR |= PWR_SCR_CWUF5 | PWR_SCR_CWUF4 | PWR_SCR_CWUF3 | PWR_SCR_CWUF2 | PWR_SCR_CWUF1;
     // TODO

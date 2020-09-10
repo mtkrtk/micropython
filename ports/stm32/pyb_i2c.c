@@ -130,7 +130,7 @@ const pyb_i2c_obj_t pyb_i2c_obj[] = {
     #endif
 };
 
-#if defined(STM32F7) || defined(STM32L4) || defined(STM32H7)
+#if defined(STM32F7) || defined(STM32L4) || defined(STM32L5) || defined(STM32H7)
 
 // The STM32F0, F3, F7, H7 and L4 use a TIMINGR register rather than ClockSpeed and
 // DutyCycle.
@@ -174,7 +174,7 @@ const pyb_i2c_obj_t pyb_i2c_obj[] = {
 #define MICROPY_HW_I2C_BAUDRATE_DEFAULT (PYB_I2C_SPEED_FULL)
 #define MICROPY_HW_I2C_BAUDRATE_MAX (PYB_I2C_SPEED_FAST)
 
-#elif defined(STM32L4)
+#elif defined(STM32L4) || defined(STM32L5)
 
 // The value 0x90112626 was obtained from the DISCOVERY_I2C1_TIMING constant
 // defined in the STM32L4Cube file Drivers/BSP/STM32L476G-Discovery/stm32l476g_discovery.h

@@ -389,8 +389,10 @@ void stm32_main(uint32_t reset_mode) {
     SCB->VTOR = MICROPY_HW_VTOR;
     #endif
 
+    #if __CORTEX_M != 33U
     // Enable 8-byte stack alignment for IRQ handlers, in accord with EABI
     SCB->CCR |= SCB_CCR_STKALIGN_Msk;
+    #endif
 
     // Check if bootloader should be entered instead of main application
     powerctrl_check_enter_bootloader();

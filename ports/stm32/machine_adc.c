@@ -27,7 +27,7 @@
 #include "py/runtime.h"
 #include "py/mphal.h"
 
-#if defined(STM32F0) || defined(STM32H7) || defined(STM32L0) || defined(STM32L4) || defined(STM32WB)
+#if defined(STM32F0) || defined(STM32H7) || defined(STM32L0) || defined(STM32L4) || defined(STM32L5) || defined(STM32WB)
 #define ADC_V2 (1)
 #else
 #define ADC_V2 (0)
@@ -35,6 +35,8 @@
 
 #if defined(STM32F4) || defined(STM32L4)
 #define ADCx_COMMON ADC_COMMON_REGISTER(0)
+#elif defined(STM32L5)
+#define ADCx_COMMON ADC12_COMMON_NS
 #elif defined(STM32F7)
 #define ADCx_COMMON ADC123_COMMON
 #endif
@@ -42,7 +44,7 @@
 #if defined(STM32F0) || defined(STM32L0)
 #define ADC_STAB_DELAY_US (1)
 #define ADC_TEMPSENSOR_DELAY_US (10)
-#elif defined(STM32L4)
+#elif defined(STM32L4) || defined(STM32L5)
 #define ADC_STAB_DELAY_US (10)
 #elif defined(STM32WB)
 #define ADC_STAB_DELAY_US (1)
@@ -60,7 +62,7 @@
 #elif defined(STM32L0)
 #define ADC_SAMPLETIME_DEFAULT      ADC_SAMPLETIME_12CYCLES_5
 #define ADC_SAMPLETIME_DEFAULT_INT  ADC_SAMPLETIME_160CYCLES_5
-#elif defined(STM32L4) || defined(STM32WB)
+#elif defined(STM32L4) || defined(STM32L5) || defined(STM32WB)
 #define ADC_SAMPLETIME_DEFAULT      ADC_SAMPLETIME_12CYCLES_5
 #define ADC_SAMPLETIME_DEFAULT_INT  ADC_SAMPLETIME_247CYCLES_5
 #endif
@@ -97,7 +99,7 @@ STATIC const uint8_t adc_cr_to_bits_table[] = {12, 10, 8, 6};
 
 STATIC void adc_config(ADC_TypeDef *adc, uint32_t bits) {
     // Configure ADC clock source and enable ADC clock
-    #if defined(STM32L4) || defined(STM32WB)
+    #if defined(STM32L4) || defined(STM32L5) || defined(STM32WB)
     __HAL_RCC_ADC_CONFIG(RCC_ADCCLKSOURCE_SYSCLK);
     __HAL_RCC_ADC_CLK_ENABLE();
     #else
@@ -127,7 +129,7 @@ STATIC void adc_config(ADC_TypeDef *adc, uint32_t bits) {
     // Configure clock mode
     #if defined(STM32F0)
     adc->CFGR2 = 2 << ADC_CFGR2_CKMODE_Pos; // PCLK/4 (synchronous clock mode)
-    #elif defined(STM32F4) || defined(STM32F7) || defined(STM32L4)
+    #elif defined(STM32F4) || defined(STM32F7) || defined(STM32L4) || defined(STM32L5)
     ADCx_COMMON->CCR = 0; // ADCPR=PCLK/2
     #elif defined(STM32H7)
     ADC12_COMMON->CCR = 3 << ADC_CCR_CKMODE_Pos;
@@ -138,18 +140,18 @@ STATIC void adc_config(ADC_TypeDef *adc, uint32_t bits) {
     ADC1_COMMON->CCR = 0 << ADC_CCR_PRESC_Pos | 0 << ADC_CCR_CKMODE_Pos; // PRESC=1, MODE=ASYNC
     #endif
 
-    #if defined(STM32H7) || defined(STM32L4) || defined(STM32WB)
+    #if defined(STM32H7) || defined(STM32L4) || defined(STM32L5) || defined(STM32WB)
     if (adc->CR & ADC_CR_DEEPPWD) {
         adc->CR = 0; // disable deep powerdown
     }
     #endif
 
-    #if defined(STM32H7) || defined(STM32L0) || defined(STM32L4) || defined(STM32WB)
+    #if defined(STM32H7) || defined(STM32L0) || defined(STM32L4) || defined(STM32L5) || defined(STM32WB)
     if (!(adc->CR & ADC_CR_ADVREGEN)) {
         adc->CR = ADC_CR_ADVREGEN; // enable VREG
         #if defined(STM32H7)
         mp_hal_delay_us(10); // T_ADCVREG_STUP
-        #elif defined(STM32L4) || defined(STM32WB)
+        #elif defined(STM32L4) || defined(STM32L5) || defined(STM32WB)
         mp_hal_delay_us(20); // T_ADCVREG_STUP
         #endif
     }
@@ -200,7 +202,7 @@ STATIC void adc_config(ADC_TypeDef *adc, uint32_t bits) {
     adc->CR2 = (adc->CR2 & ~cr2_clr) | cr2;
     adc->SQR1 = 1 << ADC_SQR1_L_Pos; // 1 conversion in regular sequence
 
-    #elif defined(STM32H7) || defined(STM32L4) || defined(STM32WB)
+    #elif defined(STM32H7) || defined(STM32L4) || defined(STM32L5) || defined(STM32WB)
 
     uint32_t cfgr_clr = ADC_CFGR_CONT | ADC_CFGR_EXTEN | ADC_CFGR_RES;
     #if defined(STM32H7)
@@ -219,7 +221,7 @@ STATIC int adc_get_bits(ADC_TypeDef *adc) {
     uint32_t res = (adc->CFGR1 & ADC_CFGR1_RES) >> ADC_CFGR1_RES_Pos;
     #elif defined(STM32F4) || defined(STM32F7)
     uint32_t res = (adc->CR1 & ADC_CR1_RES) >> ADC_CR1_RES_Pos;
-    #elif defined(STM32H7) || defined(STM32L4) || defined(STM32WB)
+    #elif defined(STM32H7) || defined(STM32L4) || defined(STM32L5) || defined(STM32WB)
     uint32_t res = (adc->CFGR & ADC_CFGR_RES) >> ADC_CFGR_RES_Pos;
     #endif
     return adc_cr_to_bits_table[res];
@@ -282,12 +284,12 @@ STATIC void adc_config_channel(ADC_TypeDef *adc, uint32_t channel, uint32_t samp
     }
     *smpr = (*smpr & ~(7 << (channel * 3))) | sample_time << (channel * 3); // select sample time
 
-    #elif defined(STM32H7) || defined(STM32L4) || defined(STM32WB)
+    #elif defined(STM32H7) || defined(STM32L4) || defined(STM32L5) || defined(STM32WB)
 
     #if defined(STM32H7)
     adc->PCSEL |= 1 << channel;
     ADC_Common_TypeDef *adc_common = adc == ADC3 ? ADC3_COMMON : ADC12_COMMON;
-    #elif defined(STM32L4)
+    #elif defined(STM32L4) || defined(STM32L5)
     ADC_Common_TypeDef *adc_common = ADCx_COMMON;
     #elif defined(STM32WB)
     ADC_Common_TypeDef *adc_common = ADC1_COMMON;
@@ -399,7 +401,7 @@ STATIC mp_obj_t machine_adc_make_new(const mp_obj_type_t *type, size_t n_args, s
         } else if (pin->adc_num & PIN_ADC2) {
             adc = ADC2;
         #endif
-        #if defined(ADC2)
+        #if defined(ADC3)
         } else if (pin->adc_num & PIN_ADC3) {
             adc = ADC3;
         #endif

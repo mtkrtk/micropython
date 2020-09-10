@@ -72,7 +72,7 @@ CFLAGS_CORTEX_M = -mthumb
 # Select hardware floating-point support
 SUPPORTS_HARDWARE_FP_SINGLE = 0
 SUPPORTS_HARDWARE_FP_DOUBLE = 0
-ifeq ($(CMSIS_MCU),$(filter $(CMSIS_MCU),STM32F765xx STM32F767xx STM32F769xx STM32H743xx))
+ifeq ($(CMSIS_MCU),$(filter $(CMSIS_MCU),STM32F765xx STM32F767xx STM32F769xx STM32H743xx STM32L552XX))
 CFLAGS_CORTEX_M += -mfpu=fpv5-d16 -mfloat-abi=hard
 SUPPORTS_HARDWARE_FP_SINGLE = 1
 SUPPORTS_HARDWARE_FP_DOUBLE = 1
@@ -93,6 +93,7 @@ CFLAGS_MCU_l0 = $(CFLAGS_CORTEX_M) -mtune=cortex-m0plus -mcpu=cortex-m0plus
 CFLAGS_MCU_l4 = $(CFLAGS_CORTEX_M) -mtune=cortex-m4 -mcpu=cortex-m4
 CFLAGS_MCU_h7 = $(CFLAGS_CORTEX_M) -mtune=cortex-m7 -mcpu=cortex-m7
 CFLAGS_MCU_wb = $(CFLAGS_CORTEX_M) -mtune=cortex-m4 -mcpu=cortex-m4
+CFLAGS_MCU_l5 = $(CFLAGS_CORTEX_M) -mtune=cortex-m33 -mcpu=cortex-m33
 
 CFLAGS += $(INC) -Wall -Wpointer-arith -Werror -Wdouble-promotion -Wfloat-conversion -std=gnu99 -nostdlib $(CFLAGS_MOD) $(CFLAGS_EXTRA)
 CFLAGS += -D$(CMSIS_MCU)
@@ -128,14 +129,14 @@ LIBS = "$(shell $(CC) $(CFLAGS) -print-libgcc-file-name)"
 
 # Remove uncalled code from the final image.
 CFLAGS += -fdata-sections -ffunction-sections
-LDFLAGS += --gc-sections
+LDFLAGS += --gc-sections --print-memory-usage
 
 # Debugging/Optimization
 ifeq ($(DEBUG), 1)
 CFLAGS += -g -DPENDSV_DEBUG
 COPT = -O0
 else
-COPT += -Os -DNDEBUG
+COPT += -Os -g -DNDEBUG
 endif
 
 # Options for mpy-cross
