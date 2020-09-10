@@ -1,0 +1,29 @@
+    TOPPERS/SafeG-M
+    STM32L552依存部 ユーザマニュアル
+
+    対応バージョン: Release x.x.x
+    最終更新: 2020年xx月xx日
+
+○概要
+本ターゲット依存部でサポートするターゲットプロセッサ，評価ボード，ターゲ
+ット名は次の通りである．
+
+・STMicroelectronics STM32L552
+ ・評価ボード   : NUCLEO-L552ZE-Q
+ ・ターゲット名 : nucleo_l552zeq
+
+ただしオプションバイトを以下の通り設定し，TrusZoneを有効にすること．オ
+プションバイトの設定はSTM32CubeProgrammer等により行える．
+
+    DBANK = 0
+    TZEN = 1
+    SECWM1_PSTRT = 0x0
+    SECWM1_PEND = 0x3F
+
+なお，DBANKおよびTZEN以外の設定項目は，TZENを設定後に設定可能となる．
+
+○IDEのサポート
+STM32CubeIDEが利用できる．サンプルプログラムはワークスペースとして
+target/st/sampleを設定すること．STM32CubeIDEの詳しい使用方法に
+ついては asp3/target/nucleo_l552zeq_gcc/target_user.txt を参照
+されたい．

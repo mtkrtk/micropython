@@ -1,0 +1,114 @@
+diff -Nau a/Makefile.target b/Makefile.target
+--- a/Makefile.target	2020-05-08 15:45:16.000000000 +0900
++++ b/Makefile.target	2020-03-09 22:58:55.000000000 +0900
+@@ -11,6 +11,11 @@
+ TOOL  = gcc
+ 
+ #
++#  SafeG-Mを使用するか
++#
++ENABLE_SAFEG_M = 1
++
++#
+ #  FPUを使用するか
+ #
+ FPU_USAGE = FPU_LAZYSTACKING
+@@ -24,7 +29,7 @@
+ #
+ #  TrustZoneを使用するか
+ #
+-ENABLE_TRUSTZONE = 0
++ENABLE_TRUSTZONE = $(ENABLE_SAFEG_M)
+ 
+ #
+ #  コンパイルオプション
+@@ -114,7 +119,20 @@
+ #
+ #  リンカスクリプトの定義
+ #
++ifeq ($(ENABLE_TRUSTZONE),1)
++LDSCRIPT = $(TARGETDIR)/stm32l552zeq_tz.ld
++else
+ LDSCRIPT = $(TARGETDIR)/stm32l552zeq.ld
++endif
++
++ifeq ($(ENABLE_SAFEG_M),1)
++#
++#  TrustZone関連の設定
++#
++CDEFS := $(CDEFS) -DTOPPERS_NS_VTOR=0x08040000
++COPTS := $(COPTS) -mcmse
++OBJ_LDFLAGS := -Wl,--cmse-implib -Wl,--out-implib=$(SRCDIR)/../FreeRTOS/sample/$(TARGET)/secure_nsclib.o
++endif
+ 
+ #
+ #  チップ依存部のインクルード
+Common subdirectories: a/STM32CubeIDE and b/STM32CubeIDE
+Common subdirectories: a/stm32fcube and b/stm32fcube
+diff -Nau a/target_kernel.cfg b/target_kernel.cfg
+--- a/target_kernel.cfg	2020-03-10 09:12:55.000000000 +0900
++++ b/target_kernel.cfg	2020-03-31 17:50:51.000000000 +0900
+@@ -4,3 +4,4 @@
+  *  $Id: target_kernel.cfg 1330 2019-12-01 06:48:13Z ertl-komori $
+  */
+ INCLUDE("target_timer.cfg");
++INCLUDE("core_kernel.cfg");
+diff -Nau a/target_kernel_impl.c b/target_kernel_impl.c
+--- a/target_kernel_impl.c	2020-07-13 00:14:19.000000000 +0900
++++ b/target_kernel_impl.c	2020-07-13 00:15:16.000000000 +0900
+@@ -130,6 +130,55 @@
+ #ifndef TOPPERS_OMIT_TECS
+ 	tPutLogSIOPort_initialize();
+ #endif /* TOPPERS_OMIT_TECS */
++
++#ifdef TOPPERS_SAFEG_M
++	/* Initialize SAU regions */
++	SAU->RNR = 0;
++	SAU->RBAR = 0x0C03E000 & SAU_RBAR_BADDR_Msk;
++	SAU->RLAR = (0x0C03FFFF & SAU_RLAR_LADDR_Msk) | SAU_RLAR_NSC_Msk | SAU_RLAR_ENABLE_Msk;
++	SAU->RNR = 1;
++	SAU->RBAR = 0x08040000 & SAU_RBAR_BADDR_Msk;
++	SAU->RLAR = (0x0807FFFF & SAU_RLAR_LADDR_Msk) | SAU_RLAR_ENABLE_Msk;
++	SAU->RNR = 2;
++	SAU->RBAR = 0x20018000 & SAU_RBAR_BADDR_Msk;
++	SAU->RLAR = (0x2003FFFF & SAU_RLAR_LADDR_Msk) | SAU_RLAR_ENABLE_Msk;
++	SAU->RNR = 3;
++	SAU->RBAR = 0x40000000 & SAU_RBAR_BADDR_Msk;
++	SAU->RLAR = (0x4FFFFFFF & SAU_RLAR_LADDR_Msk) | SAU_RLAR_ENABLE_Msk;
++	SAU->RNR = 4;
++	SAU->RBAR = 0x60000000 & SAU_RBAR_BADDR_Msk;
++	SAU->RLAR = (0x9FFFFFFF & SAU_RLAR_LADDR_Msk) | SAU_RLAR_ENABLE_Msk;
++	SAU->RNR = 5;
++	SAU->RBAR = 0x0BF90000 & SAU_RBAR_BADDR_Msk;
++	SAU->RLAR = (0x0BFA8FFF & SAU_RLAR_LADDR_Msk) | SAU_RLAR_ENABLE_Msk;
++	SAU->CTRL = SAU_CTRL_ENABLE_Msk;
++	__ISB();
++	__DSB();
++	/* Allow non-secure interrupts if needed */
++	/* NVIC->ITNS[x] = y; */
++
++	/* Enable GTZC clock */
++	RCC->AHB1ENR |= RCC_AHB1ENR_GTZCEN;
++	/* Wait 2 cycles */
++	Asm ("mov r0, r0");
++	Asm ("mov r0, r0");
++	GTZC_TZIC->FCR1 = 0xFFFFFFFF;
++	GTZC_TZIC->FCR2 = 0x3FFF6FFF;
++	GTZC_TZIC->FCR3 = 0xFF;
++	/* Enable GTZC_IRQn if needed */
++	/* Set ICACHE secure */
++	GTZC_TZSC->SECCFGR2 |= GTZC_CFGR2_ICACHE_REG_Msk;
++	/* Set SRAM security attributes */
++	for (int i = 0; i < 12; ++i) {
++		GTZC_MPCBB1->VCTR[i] = 0xFFFFFFFF;
++	}
++	for (int i = 12; i < 24; ++i) {
++		GTZC_MPCBB1->VCTR[i] = 0;
++	}
++	for (int i = 0; i < 8; ++i) {
++		GTZC_MPCBB2->VCTR[i] = 0;
++	}
++#endif /* TOPPERS_SAFEG_M */
+ }
+ 
+ /*

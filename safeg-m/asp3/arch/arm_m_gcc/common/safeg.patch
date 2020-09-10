@@ -1,0 +1,609 @@
+diff -Nau a/Makefile.core b/Makefile.core
+--- a/Makefile.core	2020-03-10 09:13:02.000000000 +0900
++++ b/Makefile.core	2020-03-09 22:59:02.000000000 +0900
+@@ -95,6 +95,9 @@
+ 	ifeq ($(ENABLE_TRUSTZONE),1)
+ 		CDEFS := $(CDEFS) -DTOPPERS_ENABLE_TRUSTZONE
+ 	endif
++	ifeq ($(ENABLE_SAFEG_M),1)
++		CDEFS := $(CDEFS) -DTOPPERS_SAFEG_M
++	endif
+ else ifeq ($(CORE_TYPE),CORTEX_M4)
+ 	ARM_ARCH = ARMV7M
+ 	COPTS := $(COPTS) -mcpu=cortex-m4
+diff -Nau a/arm_m.h b/arm_m.h
+--- a/arm_m.h	2020-03-28 11:12:32.000000000 +0900
++++ b/arm_m.h	2020-07-20 16:13:25.000000000 +0900
+@@ -71,6 +71,10 @@
+ #define EXC_RETURN_MSP          0x0
+ #define EXC_RETURN_PSP          0x4
+ #define EXC_RETURN_FP           0x10
++#ifdef TOPPERS_SAFEG_M
++#define EXC_RETURN_S            0x40
++#define EXC_RETURN_NESTED       0xFFFFFFF1
++#endif /* TOPPERS_SAFEG_M */
+ 
+ /*
+  *  CONTROLレジスタ
+@@ -178,6 +182,10 @@
+  */
+ #define NVIC_VECTTBL        0xE000ED08
+ 
++#ifdef TOPPERS_SAFEG_M
++#define NVIC_ITNS0          0xE000E380
++#define NVIC_NS_IABR0       0xE002E300
++#endif /* TOPPERS_SAFEG_M */
+ 
+ /*
+  *  SYSTIC関連レジスタ
+@@ -203,11 +211,31 @@
+ #define CCR_STKALIGN    0x00000200
+ #define CPACR_BASE      0xE000ED88U                            /*!< System Control Space Base Address  */
+ 
++#ifdef TOPPERS_SAFEG_M
++/*
++ * System Control Block
++ */
++#define SCB_AIRCR              0xE000ED0C
++#define SCB_AIRCR_VECTKEY      (0x5FA << 16)
++#define SCB_AIRCR_PRIS         (1 << 14)
++#define SCB_AIRCR_PRIGROUP_7   (0b111 << 8)
++#define SCB_AIRCR_SYSRESETREQS (1 << 3)
++#define SCB_AIRCR_DIS_GROUP    (SCB_AIRCR_VECTKEY | SCB_AIRCR_PRIS | SCB_AIRCR_SYSRESETREQS)
++#define SCB_SCR                0xE000ED10
++#define SCB_SCR_SLEEPDEEPS     (1 << 3)
++#define SCB_UFSR               0xE000ED2A
++#define SCB_NS_VTOR            0xE002ED08
++#define SCB_NS_SHCSR           0xE002ED24
++#endif /* TOPPERS_SAFEG_M */
++
+ /*
+  * FPU関連レジスタ
+  */
+ #define CPACR 0xE000ED88
+ #define FPCCR 0xE000EF34
++#ifdef TOPPERS_SAFEG_M
++#define FPCCR_NS 0xE002EF34
++#endif /* TOPPERS_SAFEG_M */
+ 
+ #define CPACR_FPU_ENABLE       0x00f00000
+ #define FPCCR_NO_PRESERV       0x00000000
+@@ -215,6 +243,11 @@
+ #define FPCCR_LAZYSTACKING     0xC0000000
+ #define FPCCR_LSPACT           0x00000001
+ 
++#ifdef TOPPERS_SAFEG_M
++#define NSACR 0xE000ED8C
++#define NSACR_FPU_ENABLE       0x00000C00
++#endif /* TOPPERS_SAFEG_M */
++
+ /*
+  *  FPCCRの初期値
+  */
+@@ -226,4 +259,19 @@
+ #define FPCCR_INIT FPCCR_LAZYSTACKING
+ #endif /* defined(TOPPERS_FPU_NO_PRESERV) */
+ 
++#ifdef TOPPERS_SAFEG_M
++/*
++ *  Security Attribution Unit
++ */
++#define SAU_CTRL            0xE000EDD0
++#define SAU_CTRL_ENABLE     (1 << 0)
++#define SAU_TYPE            0xE000EDD4
++#define SAU_RNR             0xE000EDD8
++#define SAU_RBAR            0xE000EDDC
++#define SAU_RLAR            0xE000EDE0
++#define SAU_RLAR_LADDR_MASK 0xFFFFFFE0
++#define SAU_RLAR_NSC        (1 << 1)
++#define SAU_RLAR_ENABLE     (1 << 0)
++#endif /* TOPPERS_SAFEG_M */
++
+ #endif  /* ARM_M_H */
+diff -Nau a/core_insn.h b/core_insn.h
+--- a/core_insn.h	2020-04-14 17:49:46.000000000 +0900
++++ b/core_insn.h	2020-05-30 10:23:06.000000000 +0900
+@@ -163,6 +163,32 @@
+     Asm("nop" : : : "memory");
+ }
+ 
++#ifdef TOPPERS_SAFEG_M
++/*
++ *  MSP_NSのセット
++ */
++Inline void set_msp_ns(uint32_t val)
++{
++	Asm("msr msp_ns, %0" : : "r"(val) : "memory");
++}
++
++/*
++ *  CONTROL_NSのセット
++ */
++Inline void set_control_ns(uint32_t val)
++{
++	Asm("msr control_ns, %0" : : "r"(val) : "memory");
++}
++
++/*
++ *  FAULTMASK_NSのセット
++ */
++Inline void set_faultmask_ns(uint32_t val)
++{
++	Asm("msr faultmask_ns, %0" : : "r"(val) : "memory");
++}
++#endif /* TOPPERS_SAFEG_M */
++
+ /*
+  *  SCS(NVIC等)を操作後に操作の影響を反映させてから次の命令を実行するための同期
+  */
+diff -Nau a/core_kernel.cfg b/core_kernel.cfg
+--- a/core_kernel.cfg	1970-01-01 09:00:00.000000000 +0900
++++ b/core_kernel.cfg	2020-07-02 09:45:10.000000000 +0900
+@@ -0,0 +1,7 @@
++/*
++ * カーネル実装のコンフィギュレーションファイル
++ *
++ * $Id: target_kernel.cfg 1353 2020-01-03 07:54:31Z ertl-komori $
++ */
++
++CRE_TSK(_SAFEG_BTASK, { TA_ACT, TOPPERS_NS_VTOR, _kernel_deactivate_nonsecure_interrupts, TMAX_TPRI, DEFAULT_ISTKSZ, NULL });
+diff -Nau a/core_kernel.trb b/core_kernel.trb
+--- a/core_kernel.trb	2020-04-10 13:44:13.000000000 +0900
++++ b/core_kernel.trb	2020-07-02 09:44:24.000000000 +0900
+@@ -120,7 +120,10 @@
+     (FP)_kernel_start,                 /* 1 The reset handler */
+ EOS
+ Array(2..14).each { |excno|
+-    if excno == 8
++    if excno == 6
++        # SafeG-M
++        $kernelCfgC.add("    (FP)(_kernel_usagefault_handler),      /* Usagefault handler */")
++    elsif excno == 8
+         $kernelCfgC.add("    (FP)(#{$GenResVectVal.call 8}),")
+     elsif excno == 9
+         $kernelCfgC.add("    (FP)(#{$GenResVectVal.call 9}),")
+@@ -197,3 +200,16 @@
+     $kernelCfgC.add(sprintf("   UINT32_C(0x%08x),", bitpat_cfgint))
+ }
+ $kernelCfgC.add2("};")
++
++#
++#  SafeG-M
++#
++$kernelCfgC.add <<EOS
++#ifndef _SAFEG_BTASK
++#error BTASK not found
++#else
++#if (_SAFEG_BTASK) != 1
++#error BTASK id is not 1
++#endif
++#endif
++EOS
+diff -Nau a/core_kernel_impl.c b/core_kernel_impl.c
+--- a/core_kernel_impl.c	2020-04-12 11:28:01.000000000 +0900
++++ b/core_kernel_impl.c	2020-07-20 16:15:44.000000000 +0900
+@@ -226,9 +226,17 @@
+ 	 */
+ 	sil_andw((void *)CCR_BASE, ~CCR_STKALIGN);
+ 
++#ifdef TOPPERS_SAFEG_M
++	/* Non-secureからのDeep sleepを禁止 */
++	sil_wrw_mem((uint32_t *)SCB_SCR, SCB_SCR_SLEEPDEEPS);
++#endif /* TOPPERS_SAFEG_M */
++
+ #ifdef TOPPERS_FPU_ENABLE
+ 	sil_orw((uint32_t *)CPACR, CPACR_FPU_ENABLE);
+ 	sil_wrw_mem((uint32_t *)FPCCR, FPCCR_INIT);
++#ifdef TOPPERS_SAFEG_M
++	sil_wrw_mem((uint32_t *)NSACR, NSACR_FPU_ENABLE);
++#endif /* TOPPERS_SAFEG_M */
+ #endif /* TOPPERS_FPU_ENABLE */
+ 
+ 	/*
+@@ -237,6 +245,11 @@
+ 	for (int i = 0; i < tnum_tsk; ++i) {
+ 		tcb_table[i].tskctxb.stk_top = tinib_table[i].tskinictxb.stk_top;
+ 	}
++
++#ifdef TOPPERS_SAFEG_M
++	/* Non-secure 割り込みの優先度を半分以下に設定 */
++	sil_wrw_mem((uint32_t *)SCB_AIRCR, SCB_AIRCR_DIS_GROUP);
++#endif /* TOPPERS_SAFEG_M */
+ }
+ 
+ /*
+@@ -356,3 +369,25 @@
+ 	target_exit();
+ }
+ #endif /* OMIT_DEFAULT_INT_HANDLER */
++
++typedef void __attribute__((cmse_nonsecure_call)) (*nonsecure_call_t)(void);
++void launch_ns(intptr_t exinf)
++{
++	set_faultmask_ns(1); /* Non-secure の割り込みを禁止 */
++	set_control_ns(0); /* 特権かつスタックポインタを MSP に設定 */
++	set_msp_ns(*(uint32_t *)exinf); /* スタックポインタの初期値を設定 */
++	sil_wrw_mem((uint32_t *)SCB_NS_VTOR, exinf); /* ベクタテーブルオフセットを設定 */
++	/*
++	 * Non-secure 側で Lazy stack preservation がアクティブであったとする．
++	 * このとき Secure 側の割り込みで Non-secure タスクを終了した場合を考える．
++	 * FPCCR_NS.LSPACT = 1 が設定され，FPCAR にスタックの先頭アドレスが格納される．
++	 * 次回起動時に初めて浮動小数点数命令を実行すると，
++	 * 浮動小数点数レジスタがこのスタックに積まれることになる．
++	 * しかし，このスタックはすでに無効なものであるから（最良の場合）Fault が発生する．
++	 * これを防ぐため，FPCCR_NS.LSPACT をクリアする．
++	 */
++	sil_wrw_mem((uint32_t *)FPCCR_NS, FPCCR_INIT);
++	set_basepri(0);
++	nonsecure_call_t entry = (nonsecure_call_t)*(uint32_t *)(exinf + 4);
++	entry();
++}
+diff -Nau a/core_kernel_impl.h b/core_kernel_impl.h
+--- a/core_kernel_impl.h	2020-06-24 13:13:39.000000000 +0900
++++ b/core_kernel_impl.h	2020-06-09 16:46:18.000000000 +0900
+@@ -37,7 +37,7 @@
+  *  アの利用により直接的または間接的に生じたいかなる損害に関しても，そ
+  *  の責任を負わない．
+  *
+- *  @(#) $Id: core_kernel_impl.h 1445 2020-06-24 04:13:39Z ertl-komori $
++ *  @(#) $Id: core_kernel_impl.h 1401 2020-04-14 08:49:46Z ertl-komori $
+  */
+ 
+ /*
+@@ -168,8 +168,13 @@
+  *  割込み優先度のビット幅(TBITW_IPRI)が 8 の場合は，内部優先度 255
+  *  は，外部優先度 -1 に対応する．
+  */
++#ifdef TOPPERS_SAFEG_M
++#define EXT_IPM(iipm)   (CAST(PRI,((iipm >> (7 - TBITW_IPRI)) - (1 << TBITW_IPRI))))       /* 内部表現を外部表現に */
++#define INT_IPM(ipm)    (((1 << TBITW_IPRI) - CAST(uint8_t, -(ipm)))  << (7 - TBITW_IPRI)) /* 外部表現を内部表現に */
++#else
+ #define EXT_IPM(iipm)   (CAST(PRI,((iipm >> (8 - TBITW_IPRI)) - (1 << TBITW_IPRI))))       /* 内部表現を外部表現に */
+ #define INT_IPM(ipm)    (((1 << TBITW_IPRI) - CAST(uint8_t, -(ipm)))  << (8 - TBITW_IPRI)) /* 外部表現を内部表現に */
++#endif /* TOPPERS_SAFEG_M */
+ 
+ /*
+  *  CPUロック状態での割込み優先度マスク
+@@ -189,7 +194,11 @@
+  *
+  *  BASEPRIに '0' を設定することで，全割込みを許可する．
+  */
++#ifdef TOPPERS_SAFEG_M
++#define IIPM_ENAALL  (0x80)
++#else
+ #define IIPM_ENAALL  (0)
++#endif /* TOPPERS_SAFEG_M */
+ 
+ 
+ #ifndef TOPPERS_MACRO_ONLY
+@@ -784,5 +793,14 @@
+  */
+ extern void default_int_handler(void);
+ 
++#ifdef TOPPERS_SAFEG_M
++extern void usagefault_handler(void);
++extern void deactivate_nonsecure_interrupts(void);
++/*
++ * Non-secure起動ルーチン（core_support.S）
++ */
++extern void launch_ns(intptr_t exinf);
++#endif /* TOPPERS_SAFEG_M */
++
+ #endif /* TOPPERS_MACRO_ONLY */
+ #endif /* TOPPERS_CORE_KERNEL_IMPL_H */
+diff -Nau a/core_rename.def b/core_rename.def
+--- a/core_rename.def	2020-04-02 14:02:27.000000000 +0900
++++ b/core_rename.def	2020-07-02 09:43:46.000000000 +0900
+@@ -13,6 +13,8 @@
+ enable_exc
+ disable_exc
+ core_int_entry
++# SafeG-M
++launch_ns
+ 
+ # core_support.S
+ core_exc_entry
+@@ -25,3 +27,6 @@
+ start_dispatch
+ exit_and_dispatch
+ call_exit_kernel
++# SafeG-M
++usagefault_handler
++deactivate_nonsecure_interrupts
+diff -Nau a/core_rename.h b/core_rename.h
+--- a/core_rename.h	2020-04-02 14:02:35.000000000 +0900
++++ b/core_rename.h	2020-07-02 09:43:55.000000000 +0900
+@@ -20,6 +20,10 @@
+ #define enable_exc					_kernel_enable_exc
+ #define disable_exc					_kernel_disable_exc
+ #define core_int_entry				_kernel_core_int_entry
++/*
++ *  SafeG-M
++ */
++#define launch_ns					_kernel_launch_ns
+ 
+ /*
+  *  core_support.S
+@@ -34,6 +38,11 @@
+ #define start_dispatch				_kernel_start_dispatch
+ #define exit_and_dispatch			_kernel_exit_and_dispatch
+ #define call_exit_kernel			_kernel_call_exit_kernel
++/*
++ *  SafeG-M
++ */
++#define usagefault_handler			_kernel_usagefault_handler
++#define deactivate_nonsecure_interrupts	_kernel_deactivate_nonsecure_interrupts
+ 
+ 
+ #endif /* TOPPERS_CORE_RENAME_H */
+diff -Nau a/core_support.S b/core_support.S
+--- a/core_support.S	2020-04-14 17:49:46.000000000 +0900
++++ b/core_support.S	2020-07-20 14:01:42.000000000 +0900
+@@ -152,6 +152,16 @@
+ 	ldr    r0, [r1]
+ 	/* p_runtsk == NULL <=> アイドル処理から -> コンテキスト保存なし */
+ 	cbz    r0, pendsv_handler_1
++#ifdef TOPPERS_SAFEG_M
++	ldr    r2, =_kernel_tcb_table
++	cmp    r0, r2
++	/* p_runtsk == btask <=> Non-secure から */
++	bne    pendsv_context_save
++	/* Non-secure の割り込みを禁止 */
++	mov    r2, #IIPM_ENAALL
++	msr    basepri, r2
++ALABEL(pendsv_context_save)
++#endif /* TOPPERS_SAFEG_M */
+ 	/* コンテキストを保存 */
+ 	mrs    r2, psp
+ #ifdef TOPPERS_FPU_CONTEXT
+@@ -207,7 +217,16 @@
+ 	 * この区間でカーネル管理の割り込みが発生しないよう faultmask をセットする．
+ 	 * 例外リターンにより，faultmask は自動的に解除される．
+ 	 */
++#ifdef TOPPERS_SAFEG_M
++	/* p_runtsk == btask なら Non-secure へ */
++	ldr    r2, =_kernel_tcb_table
++	cmp    r0, r2
++	ite    eq
++	moveq  r0, #0 /* Non-secure の割り込みを許可 */
++	movne  r0, #IIPM_ENAALL
++#else
+ 	mov    r0, #IIPM_ENAALL
++#endif /* TOPPERS_SAFEG_M */
+ 	cpsid  f
+ 	msr    basepri, r0
+ 	bx     r1
+@@ -267,6 +286,7 @@
+  * この時点でのレジスタ
+  * r4 : p_runtsk
+  * r5 : p_runtsk->tskctxb.pc
++ * r6 : basepri に設定する値 (SafeG-M)
+  */
+ 	ATHUMB(svc_handler)
+ 	AGLOBAL(svc_handler)
+@@ -279,8 +299,12 @@
+ 	ldr    r0, =lock_flag
+ 	mov    r1, #0
+ 	str    r1, [r0]
++#ifdef TOPPERS_SAFEG_M
++	msr    basepri, r6
++#else
+ 	ldr    r0, =#IIPM_ENAALL
+ 	msr    basepri, r0
++#endif /* TOPPERS_SAFEG_M */
+ #if __TARGET_ARCH_THUMB >= 5
+ 	ldr    r0, [r4, #TCB_stk_top]
+ 	msr    psplim, r0
+@@ -392,6 +416,13 @@
+ 	/* r1, r2 は例外ハンドラの先頭で未定義となるため退避 */
+ 	mov   r4, r1
+ 	mov   r5, r2
++#ifdef TOPPERS_SAFEG_M
++	ldr   r3, =_kernel_tcb_table
++	cmp   r1, r3
++	ite   eq
++	moveq r6, #0
++	movne r6, #IIPM_ENAALL /* basepri の設定に使用する */
++#endif /* TOPPERS_SAFEG_M */
+ 	svc   #0
+ 
+ /*
+@@ -511,3 +542,172 @@
+ 	cmp   r0, #0
+ 	bgt   sil_dly_nse1
+ 	bx    lr
++
++	ATHUMB(usagefault_handler)
++	AGLOBAL(usagefault_handler)
++ALABEL(usagefault_handler)
++	/*
++	 * Usagefault 例外ハンドラ
++	 * 通常の Usagefault であるか，deactivate_first_entry で意図的に発生させた
++	 * Usagefault かを判定する．
++	 * 意図的な Usagefault であるかは次の手順で判定する．
++	 * 1. 例外が Secure の Thread モードで発生し，
++	 *    コンテキスト保存に PSP が使用されたことを確かめる．
++	 * 2. 戻り先が deactivate_first_entry の udf 命令であることを確かめる．
++	 * これらに当てはまらない場合は core_exc_entry へ分岐する．
++	 *
++	 * このハンドラは最高優先度で実行されるので，なるべく早く終了させる．
++	 */
++	and   r0, lr, #(EXC_RETURN_S | EXC_RETURN_THREAD | EXC_RETURN_PSP)
++	cmp   r0, #(EXC_RETURN_S | EXC_RETURN_THREAD | EXC_RETURN_PSP)
++	bne   core_exc_entry
++	mrs   r0, psp
++	ldr   r1, [r0, #(4 * 6)]
++	ldr   r2, =deactivate_udef_entry
++	cmp   r1, r2
++	bne   core_exc_entry
++	/* この時点で意図的な Usagefault であることが確定 */
++	/* udf の次命令にリターンするよう設定 */
++	add   r1, #2
++	str   r1, [r0, #(4 * 6)]
++	/* Usagefault のステータスをクリア */
++	ldr   r0, =#SCB_UFSR
++	mov   r1, #1
++	strh  r1, [r0]
++	/* 1回目はダミーのレジスタ情報をスタックに積む */
++	/* NVIC_IABR は読み取り専用なので安全 */
++	push  {r4, r5}
++	ATHUMB(deactivate_nest_entry)
++ALABEL(deactivate_nest_entry)
++	/* MSP にダミーコンテキストを準備 */
++	stmfd sp!, {r7, r8} /* RETPSR と戻り先番地を設定 */
++	sub   sp, #(4 * 6)
++	ldr   pc, =#EXC_RETURN_NESTED /* 例外リターンで deactivate_exc_point へ */
++
++/*
++ * Non-secure でアクティブなままになっている割り込みを完了させる．
++ * アクティブな割り込みがなければ，このルーチンは終始 Thread モードで動作する．
++ * 最初にアクティブな割り込みを発見すると Usagefault を発生させ，Handler モードへ移行する．
++ * その後 Usagefault のハンドラから対象の割り込みのハンドラへ移行し実行を続ける．
++ * 2回目にアクティブな割り込みを発見した場合はそのまま次の割り込みハンドラへ移行する．
++ * これを繰り返し最後の割り込みハンドラから Thread モードへリターンし，終了する．
++ * Handler モードである間の実行優先度は Usagefault のハンドラである間を除いて 0x80 である．
++ * すなわち，ほとんど全ての時間でこのルーチンは割り込みによりプリエンプト可能である．
++ *
++ * Thread モードと 複数の Handler モードでレジスタの値を共有するため，
++ * 次のように非スクラッチレジスタを利用する．
++ * r4  : NVIC non-secure active bit register 0
++ * r5  : loop counter
++ * r6  : アクティブな割り込みに対する分岐先
++ * r7  : 例外リターンの戻り先 (deactivate_exc_point)
++ * r8  : RETPSR
++ * r9  : 処理済みの割り込みを分別するマスク
++ * r10 : NVIC target nonsecure register のバックアップ
++ * r11 : リターン先アドレス
++ *
++ * なお，r0 は launch_ns の引数として使用するため変更できない．
++ */
++	ATHUMB(deactivate_nonsecure_interrupts)
++	AGLOBAL(deactivate_nonsecure_interrupts)
++ALABEL(deactivate_nonsecure_interrupts)
++	/* Non-secure の例外をデアクティベート */
++	ldr  r1, =#SCB_NS_SHCSR /* SCB_NS.SHCSR */
++	mov  r2, #0
++	str  r2, [r1]
++	ldr  r4, =#NVIC_NS_IABR0 /* r4 は常に NVIC_NS.IABR0 */
++	mov  r5, #0 /* r5 は 0 から 15 の間で変化させる */
++	/* 初めて例外を発見した際は deactivate_first_entry に分岐する */
++	ldr  r6, =deactivate_first_entry
++	ldr  r7, =deactivate_exc_point /* r7 は常に deactivate_exc_point */
++	/* アクティブな例外がなかった場合はそのまま launch_ns に分岐 */
++	ldr  r11, =launch_ns
++ALABEL(deactivate_loop_start)
++	cmp  r5, #16
++	blt  deactivate_loop_body
++	/* NVIC_NS.IABR を全て調べ終わるとここに来る */
++	/* 戻り先は launch_ns または 例外リターンにより deactivate_udef_entry の udf 命令後 */
++	bx   r11
++	/* for (r5 = 0; r5 < 16; ++r5) { */
++ALABEL(deactivate_loop_body)
++	mvn  r9, #0 /* 新しい NVIC_NS.IABRn に対してマスクを全て 1 に初期化 */
++ALABEL(deactivate_loop2_start)
++	/*
++	 * 割り込みのアクティブ状態を取得してマスクする．
++	 * いま，IRQ A, B が同じ NVIC_NS.IABR 内でアクティブであったとする．
++	 * 最初ここに到達した際は A, B 両方がアクティブであり，A の割り込みハンドラへ分岐する．
++	 * 次にここに到達した際は，A の割り込みハンドラとして実行されることになる．
++	 * この時まだ A はアクティブであるから，処理の対象から A を外す必要がある．
++	 * そこで 2 回目は A をマスクすれば，B の割り込みハンドラへ分岐することができる．
++	 */
++	ldr  r1, [r4, r5, lsl #2]
++	and  r1, r9
++	cbz  r1, deactivate_loop_end /* アクティブな例外がなければ次のレジスタへ */
++	/* 最上位の 1 であるビットを処理対象にする．*/
++	mov  r2, #31
++	clz  r1, r1
++	sub  r1, r2, r1 /* r1 に最上位ビットが何ビット目であるかが格納される */
++	mov  r10, #1
++	lsl  r10, r1 /* r10 が最上位ビットに等しくなる (1 << r1) */
++	bic  r9, r10 /* マスクを更新し，この割り込みを次回の処理対象から外す */
++	mov  r3, #32
++	mul  r3, r5
++	add  r1, r3 /* r1 が割り込み番号になる */
++	ldr  r3, =#NVIC_PRI0 /* NVIC priority register */
++	mov  r12, #IIPM_ENAALL
++	/* 
++	 * 優先度を Thread モードと同じにする．
++	 * Secure の割り込みでプリエンプト可能であり，ペンディングされても発行されない．
++	 */
++	strb r12, [r3, r1]
++	/* 一旦割り込みの対象を Secure にする */
++	ldr  r3, =#NVIC_ITNS0
++	ldr  r2, [r3, r5, lsl #2]
++	bic  r12, r2, r10
++	str  r12, [r3, r5, lsl #2]
++	add  r8, r1, #16 /* r8 が例外番号になる */
++	movt r8, #(EPSR_T >> 16)
++	/*
++	 * 初めてここに到達した際は deactivate_first_entry に分岐し，Handler モードへ移行する．
++	 * 2 回目以降はすでに Handler モードであるから，直接 deactivate_nest_entry に分岐する．
++	 */
++	bx   r6
++	ATHUMB(deactivate_exc_point)
++ALABEL(deactivate_exc_point)
++	/* ここへは 1 つ前の命令から例外リターンで分岐する */
++	/* 例外リターンにより inactive となった 1 つ前の割り込みを Non-secure に戻す */
++	pop  {r1, r2}
++	ldr  r3, [r1]
++	orr  r2, r3
++	str  r2, [r1]
++	/* 次回の例外リターン後に Non-secure に戻せるよう，今回の割り込みをスタックに保存 */
++	ldr  r1, =#NVIC_ITNS0
++	lsl  r2, r5, #2
++	add  r1, r2
++	push {r1, r10}
++	/* これらスタック操作は全て MSP に対して行われることに気を付ける */
++	b    deactivate_loop2_start /* 次の割り込みを調べる */
++	/* } */
++ALABEL(deactivate_loop_end)
++	add  r5, #1
++	b    deactivate_loop_start /* 次の NVIC_NS.IABRn へ */
++
++	ATHUMB(deactivate_first_entry)
++ALABEL(deactivate_first_entry)
++	/* ここへは最初にアクティブな割り込みを発見した際に分岐する */
++	/* 次回以降は直接 deactivate_nest_entry へ分岐させる */
++	ldr  r6, =deactivate_nest_entry
++	/* 終了時は直接 launch_ns ではなく deactivate_exit へ分岐させる */
++	ldr  r11, =deactivate_exit
++ALABEL(deactivate_udef_entry)
++	udf  #0 /* Usagefault を発生させる */
++	/* ここへは deactivate_exit から例外リターンで分岐する */
++	/* 最後の割り込みを Non-secure に戻す */
++	ldr  r1, [r4]
++	orr  r5, r1
++	str  r5, [r4]
++	b    launch_ns /* launch_ns へ分岐 */
++
++	ATHUMB(deactivate_exit)
++ALABEL(deactivate_exit)
++	pop  {r4, r5} /* 最後の割り込みを Non-secure に戻すためスタックから復帰 */
++	ldr  pc, =#EXC_RETURN /* 例外リターンで deactivate_udef_entry の udf 命令後へ */
+diff -Nau a/core_unrename.h b/core_unrename.h
+--- a/core_unrename.h	2020-04-02 14:02:35.000000000 +0900
++++ b/core_unrename.h	2020-07-02 09:43:55.000000000 +0900
+@@ -21,6 +21,10 @@
+ #undef enable_exc
+ #undef disable_exc
+ #undef core_int_entry
++/*
++ *  SafeG-M
++ */
++#undef launch_ns
+ 
+ /*
+  *  core_support.S
+@@ -35,6 +39,11 @@
+ #undef start_dispatch
+ #undef exit_and_dispatch
+ #undef call_exit_kernel
++/*
++ *  SafeG-M
++ */
++#undef usagefault_handler
++#undef deactivate_nonsecure_interrupts
+ 
+ 
+ #endif /* TOPPERS_CORE_RENAME_H */
