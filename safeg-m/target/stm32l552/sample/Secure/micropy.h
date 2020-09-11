@@ -1,8 +1,9 @@
-#ifndef MICROPY_H_
-#define MICROPY_H_
+#ifndef __MICROPY__
+#define __MICROPY__
 
 #include <kernel.h>
 
-void main_task(intptr_t exinf);
+void initializer(intptr_t exinf);
+void task(intptr_t exinf);
 
-#endif /* MICROPY_H_ */
+#endif

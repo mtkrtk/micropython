@@ -126,7 +126,7 @@ target_initialize(void)
 	/*
 	 *  SIOを初期化
 	 */
-//	lpuart_low_init();
+	lpuart_low_init();
 #ifndef TOPPERS_OMIT_TECS
 	tPutLogSIOPort_initialize();
 #endif /* TOPPERS_OMIT_TECS */

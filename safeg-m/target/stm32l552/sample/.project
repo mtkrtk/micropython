@@ -13,13 +13,6 @@
 		<nature>com.st.stm32cube.ide.mcu.MCUManagedMakefileProjectNature</nature>
 		<nature>com.st.stm32cube.ide.mcu.MCUSingleCpuProjectNature</nature>
 	</natures>
-	<linkedResources>
-		<link>
-			<name>stm32</name>
-			<type>2</type>
-			<locationURI>PARENT-4-PROJECT_LOC/ports/stm32</locationURI>
-		</link>
-	</linkedResources>
 	<filteredResources>
 		<filter>
 			<id>1581641439132</id>
