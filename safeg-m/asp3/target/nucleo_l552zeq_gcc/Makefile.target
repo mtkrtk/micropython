@@ -131,7 +131,8 @@ ifeq ($(ENABLE_SAFEG_M),1)
 #
 CDEFS := $(CDEFS) -DTOPPERS_NS_VTOR=0x08029000
 COPTS := $(COPTS) -mcmse
-#OBJ_LDFLAGS := -Wl,--cmse-implib -Wl,--out-implib=$(SRCDIR)/../FreeRTOS/sample/$(TARGET)/secure_nsclib.o
+OBJ_LDFLAGS := -Wl,--cmse-implib -Wl,--out-implib=$(SRCDIR)/../../ports/stm32/build-NUCLEO_L552ZE/secure_nsclib.o
+$(shell mkdir -p $(SRCDIR)/../../ports/stm32/build-NUCLEO_L552ZE/)
 endif
 
 #

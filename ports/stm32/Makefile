@@ -307,6 +307,7 @@ SRC_C = \
 	machine_uart.c \
 	modmachine.c \
 	modpyb.c \
+	modsafegm.c \
 	modstm.c \
 	moduos.c \
 	modutime.c \
@@ -518,6 +519,7 @@ OBJ += $(addprefix $(BUILD)/, $(SRC_HAL:.c=.o))
 OBJ += $(addprefix $(BUILD)/, $(SRC_USBDEV:.c=.o))
 OBJ += $(addprefix $(BUILD)/, $(SRC_MOD:.c=.o))
 OBJ += $(BUILD)/pins_$(BOARD).o
+OBJ += $(wildcard $(BUILD)/secure_nsclib.o)
 
 # This file contains performance critical functions so turn up the optimisation
 # level.  It doesn't add much to the code size and improves performance a bit.
